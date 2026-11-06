@@ -60,7 +60,7 @@ function Invoke-RepositoryGit {
 }
 
 function Get-StringSha256 {
-    param([Parameter(Mandatory)][string]$Text)
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
 
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
