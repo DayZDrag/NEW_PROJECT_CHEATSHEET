@@ -3,9 +3,10 @@
 Синхронизирует обязательные инструкции главного шаблона с проектными файлами.
 
 .DESCRIPTION
-Скрипт сравнивает Git-коммит, Git-состояние и SHA-256 главной шпаргалки с
-предыдущим запуском. При изменении шаблона или управляемого блока он обновляет
-только блоки между маркерами, не затрагивая проектный текст вне них.
+Скрипт сравнивает Git-коммит, Git-состояние и отдельные SHA-256 главной шпаргалки
+и реестра технологий с предыдущим запуском. При изменении источников или
+управляемого блока он обновляет только блоки между маркерами, включая снимок
+реестра, не затрагивая проектный текст вне них.
 #>
 [CmdletBinding()]
 param(
@@ -187,6 +188,11 @@ if (-not (Test-Path -LiteralPath $templateFile -PathType Leaf)) {
     throw "Не найден главный файл шаблона: $templateFile"
 }
 
+$registryFile = Join-Path $TemplateRoot 'TECHNOLOGY_REGISTRY.md'
+if (-not (Test-Path -LiteralPath $registryFile -PathType Leaf)) {
+    throw "Не найден глобальный реестр технологий: $registryFile"
+}
+
 # Проверяем, что оба пути относятся к Git-репозиториям до любых записей.
 $null = Invoke-RepositoryGit -Repository $TemplateRoot -Arguments @('rev-parse', '--is-inside-work-tree')
 $null = Invoke-RepositoryGit -Repository $ProjectRoot -Arguments @('rev-parse', '--is-inside-work-tree')
@@ -195,6 +201,8 @@ $templateCommit = (@(Invoke-RepositoryGit -Repository $TemplateRoot -Arguments @
 $templateStatusLines = @((Invoke-RepositoryGit -Repository $TemplateRoot -Arguments @('status', '--porcelain=v1', '--untracked-files=all')) | ForEach-Object { [string]$_ })
 $templateText = [System.IO.File]::ReadAllText($templateFile)
 $templateHash = Get-StringSha256 -Text $templateText
+$registryText = [System.IO.File]::ReadAllText($registryFile)
+$registryHash = Get-StringSha256 -Text $registryText
 $templateStatusHash = Get-StringSha256 -Text ($templateStatusLines -join "`n")
 $templateState = if ($templateStatusLines.Count -gt 0) { 'есть локальные изменения' } else { 'рабочее дерево чисто' }
 
@@ -226,6 +234,13 @@ $beginMarker
 Этот блок управляется скриптом `sync-template-instructions.ps1`. Не изменяйте и не удаляйте его вручную: при следующем рабочем цикле скрипт безопасно восстановит актуальную редакцию. Текст вне маркеров остаётся проектным и не перезаписывается.
 
 $($templateText.Trim())
+
+## Снимок глобального реестра технологий
+
+Источник: TECHNOLOGY_REGISTRY.md из главного шаблона; SHA-256: $registryHash.
+Этот снимок обновляется только скриптом синхронизации. При доступном главном шаблоне читайте канонический реестр перед вопросами о выборе инструмента.
+
+$($registryText.Trim())
 $endMarker
 "@.Trim()
 
@@ -240,6 +255,7 @@ $targets = @(
 $templateChanged = ($null -eq $previousState) -or
     ((Get-StateProperty -State $previousState -Name 'templateCommit') -ne $templateCommit) -or
     ((Get-StateProperty -State $previousState -Name 'templateHash') -ne $templateHash) -or
+    ((Get-StateProperty -State $previousState -Name 'registryHash') -ne $registryHash) -or
     ((Get-StateProperty -State $previousState -Name 'templateStatusHash') -ne $templateStatusHash)
 
 $updatedTargets = [System.Collections.Generic.List[string]]::new()
@@ -264,9 +280,10 @@ foreach ($target in $targets) {
 }
 
 $state = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     templateCommit = $templateCommit
     templateHash = $templateHash
+    registryHash = $registryHash
     templateStatusHash = $templateStatusHash
     templateHasLocalChanges = ($templateStatusLines.Count -gt 0)
     synchronizedAtUtc = [DateTime]::UtcNow.ToString('o')
