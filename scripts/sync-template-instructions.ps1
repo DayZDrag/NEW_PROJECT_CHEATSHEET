@@ -3,10 +3,11 @@
 Синхронизирует обязательные инструкции главного шаблона с проектными файлами.
 
 .DESCRIPTION
-Скрипт сравнивает Git-коммит, Git-состояние и отдельные SHA-256 главной шпаргалки
-и реестра технологий с предыдущим запуском. При изменении источников или
-управляемого блока он обновляет только блоки между маркерами, включая снимок
-реестра, не затрагивая проектный текст вне них.
+Скрипт сравнивает Git-коммит, Git-состояние и отдельные SHA-256 главной шпаргалки,
+реестра технологий и рекомендаций по координации с предыдущим запуском. При
+изменении источников или управляемого блока он обновляет только блоки между
+маркерами, включая снимки реестра и рекомендаций, не затрагивая проектный текст
+вне них.
 #>
 [CmdletBinding()]
 param(
@@ -193,6 +194,11 @@ if (-not (Test-Path -LiteralPath $registryFile -PathType Leaf)) {
     throw "Не найден глобальный реестр технологий: $registryFile"
 }
 
+$coordinationRecommendationsFile = Join-Path $TemplateRoot 'COORDINATION_RECOMMENDATIONS.md'
+if (-not (Test-Path -LiteralPath $coordinationRecommendationsFile -PathType Leaf)) {
+    throw "Не найден файл рекомендаций по координации: $coordinationRecommendationsFile"
+}
+
 # Проверяем, что оба пути относятся к Git-репозиториям до любых записей.
 $null = Invoke-RepositoryGit -Repository $TemplateRoot -Arguments @('rev-parse', '--is-inside-work-tree')
 $null = Invoke-RepositoryGit -Repository $ProjectRoot -Arguments @('rev-parse', '--is-inside-work-tree')
@@ -203,6 +209,8 @@ $templateText = [System.IO.File]::ReadAllText($templateFile)
 $templateHash = Get-StringSha256 -Text $templateText
 $registryText = [System.IO.File]::ReadAllText($registryFile)
 $registryHash = Get-StringSha256 -Text $registryText
+$coordinationRecommendationsText = [System.IO.File]::ReadAllText($coordinationRecommendationsFile)
+$coordinationRecommendationsHash = Get-StringSha256 -Text $coordinationRecommendationsText
 $templateStatusHash = Get-StringSha256 -Text ($templateStatusLines -join "`n")
 $templateState = if ($templateStatusLines.Count -gt 0) { 'есть локальные изменения' } else { 'рабочее дерево чисто' }
 
@@ -241,6 +249,13 @@ $($templateText.Trim())
 Этот снимок обновляется только скриптом синхронизации. При доступном главном шаблоне читайте канонический реестр перед вопросами о выборе инструмента.
 
 $($registryText.Trim())
+
+## Снимок рекомендаций по координации
+
+Источник: COORDINATION_RECOMMENDATIONS.md
+SHA-256: $coordinationRecommendationsHash
+
+$($coordinationRecommendationsText.Trim())
 $endMarker
 "@.Trim()
 
@@ -253,9 +268,11 @@ $targets = @(
 )
 
 $templateChanged = ($null -eq $previousState) -or
+    ((Get-StateProperty -State $previousState -Name 'schemaVersion') -ne '3') -or
     ((Get-StateProperty -State $previousState -Name 'templateCommit') -ne $templateCommit) -or
     ((Get-StateProperty -State $previousState -Name 'templateHash') -ne $templateHash) -or
     ((Get-StateProperty -State $previousState -Name 'registryHash') -ne $registryHash) -or
+    ((Get-StateProperty -State $previousState -Name 'coordinationRecommendationsHash') -ne $coordinationRecommendationsHash) -or
     ((Get-StateProperty -State $previousState -Name 'templateStatusHash') -ne $templateStatusHash)
 
 $updatedTargets = [System.Collections.Generic.List[string]]::new()
@@ -280,10 +297,11 @@ foreach ($target in $targets) {
 }
 
 $state = [ordered]@{
-    schemaVersion = 2
+    schemaVersion = 3
     templateCommit = $templateCommit
     templateHash = $templateHash
     registryHash = $registryHash
+    coordinationRecommendationsHash = $coordinationRecommendationsHash
     templateStatusHash = $templateStatusHash
     templateHasLocalChanges = ($templateStatusLines.Count -gt 0)
     synchronizedAtUtc = [DateTime]::UtcNow.ToString('o')
