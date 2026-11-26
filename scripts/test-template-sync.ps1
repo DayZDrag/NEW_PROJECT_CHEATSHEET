@@ -67,10 +67,29 @@ try {
     $recommendationsPath = Join-Path $template 'COORDINATION_RECOMMENDATIONS.md'
     $recommendationsHashBeforeInitialSync = Get-TestFileSha256 -Path $recommendationsPath
     $recommendationsSnapshotText = [System.IO.File]::ReadAllText($recommendationsPath).Trim()
+    $rulesText = [System.IO.File]::ReadAllText((Join-Path $template 'NEW_PROJECT_CHEATSHEET.md')).Trim()
+    foreach ($name in @('NEW_PROJECT_CHEATSHEET.md', 'COORDINATION_RECOMMENDATIONS.md')) {
+        $document = [System.IO.File]::ReadAllText((Join-Path $template $name))
+        Assert-True ($document.Contains('У каждого координатора ровно два прямых подчинённых. У каждого рабочего ноль подчинённых.')) "В источнике нарушено двоичное ветвление: $name"
+        Assert-True ($document.Contains('явное подтверждение показанного дерева')) "В источнике потеряно согласование дерева: $name"
+        $example = [regex]::Match($document, '(?ms)^```text\r?\n([^\r\n]+ · 3 агента\r?\n.*?)^```\s+Подтверждаете это дерево команды\?')
+        Assert-True $example.Success "Нет схемы с числом агентов и вопросом о подтверждении: $name"
+        $treeLines = $example.Groups[1].Value -split '\r?\n'
+        Assert-True (@($treeLines -match '^Координатор · .+ / xhigh$').Count -eq 1) "В схеме отсутствует координатор: $name"
+        foreach ($prefixInTree in @('├── ', '└── ', '│   ├─ ', '│   └─ ', '    ├─ ', '    └─ ')) {
+            Assert-True (@($treeLines -clike "$prefixInTree*").Count -eq 1) "Проверьте ветвь или поручение '$prefixInTree' в схеме: $name"
+        }
+    }
     Invoke-TestSync $project $template 'UPDATED'
+    $preferences = [System.IO.File]::ReadAllText((Join-Path $project 'PREFERENCES.md'))
+    Assert-True ($preferences.Contains('всегда создаёт Git-коммит со всеми относящимися к ней изменениями')) 'В PREFERENCES.md нового проекта отсутствует правило коммита после каждой работы.'
     Assert-True ((Get-TestFileSha256 -Path $recommendationsPath) -ceq $recommendationsHashBeforeInitialSync) 'Синхронизация изменила источник рекомендаций.'
     foreach ($relative in $targets) {
         $content = [System.IO.File]::ReadAllText((Join-Path $project $relative))
+        Assert-True ($content.Contains('запрашивает явное подтверждение показанного дерева')) "Требование подтверждения не перенесено: $relative"
+        Assert-True ($content.Contains('У каждого координатора ровно два прямых подчинённых. У каждого рабочего ноль подчинённых.')) "Предел ветвления не перенесён: $relative"
+        Assert-True ($content.Contains('корневого координатора и координаторов всех уровней без исключений')) "Предел не охватывает все уровни: $relative"
+        Assert-True ($content.Contains($rulesText)) "Правила и пример схемы перенесены не полностью: $relative"
         Assert-True ($content.Contains('# Глобальный реестр сервисов и инструментов разработки')) "Реестр не перенесён: $relative"
         Assert-True ($content.Contains('У пользователя есть опыт работы с Vercel, и он доверяет сервису.')) "Обоснование не перенесено: $relative"
         Assert-True ($content.Contains('## Снимок рекомендаций по координации')) "Заголовок снимка рекомендаций не перенесён: $relative"
