@@ -68,10 +68,14 @@ try {
     $recommendationsHashBeforeInitialSync = Get-TestFileSha256 -Path $recommendationsPath
     $recommendationsSnapshotText = [System.IO.File]::ReadAllText($recommendationsPath).Trim()
     $rulesText = [System.IO.File]::ReadAllText((Join-Path $template 'NEW_PROJECT_CHEATSHEET.md')).Trim()
+    $replacementRule = 'До явного согласия пользователя на предложенный вариант действует прежнее дерево.'
     foreach ($name in @('NEW_PROJECT_CHEATSHEET.md', 'COORDINATION_RECOMMENDATIONS.md')) {
         $document = [System.IO.File]::ReadAllText((Join-Path $template $name))
         Assert-True ($document.Contains('У каждого координатора ровно два прямых подчинённых. У каждого рабочего ноль подчинённых.')) "В источнике нарушено двоичное ветвление: $name"
         Assert-True ($document.Contains('явное подтверждение показанного дерева')) "В источнике потеряно согласование дерева: $name"
+        Assert-True ($document.Contains('координатор вправе предложить')) "В источнике потеряно право предложить новое дерево: $name"
+        Assert-True ($document.Contains($replacementRule)) "В источнике потеряно согласование замены дерева: $name"
+        Assert-True ($document.Contains('Каждую изменённую версию координатор снова показывает и согласует с пользователем до первого действия по ней.')) "Нет повторного согласования изменённой версии: $name"
         $example = [regex]::Match($document, '(?ms)^```text\r?\n([^\r\n]+ · 3 агента\r?\n.*?)^```\s+Подтверждаете это дерево команды\?')
         Assert-True $example.Success "Нет схемы с числом агентов и вопросом о подтверждении: $name"
         $treeLines = $example.Groups[1].Value -split '\r?\n'
